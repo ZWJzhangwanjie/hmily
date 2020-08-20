@@ -36,7 +36,7 @@
         </dependency>
         <dependency>
             <groupId>org.dromara</groupId>
-            <artifactId>hmily-config</artifactId>
+            <artifactId>hmily-config-api</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

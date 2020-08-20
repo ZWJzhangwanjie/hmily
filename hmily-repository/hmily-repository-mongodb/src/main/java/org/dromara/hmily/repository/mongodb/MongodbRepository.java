@@ -21,9 +21,15 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
-import org.dromara.hmily.config.HmilyConfig;
-import org.dromara.hmily.config.HmilyMongoConfig;
+import org.dromara.hmily.config.api.ConfigEnv;
+import org.dromara.hmily.config.api.entity.HmilyMongoConfig;
 import org.dromara.hmily.repository.mongodb.entity.ParticipantMongoEntity;
 import org.dromara.hmily.repository.mongodb.entity.TransactionMongoEntity;
 import org.dromara.hmily.repository.mongodb.entity.UndoMongoEntity;
@@ -38,13 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoClientFactoryBean;
 import org.springframework.data.mongodb.core.query.Criteria;
-
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * mongo impl.
@@ -63,14 +62,14 @@ public class MongodbRepository implements HmilyRepository {
     private String appName;
 
     @Override
-    public void init(final HmilyConfig hmilyConfig) {
-        appName = hmilyConfig.getAppName();
-        final HmilyMongoConfig hmilyMongoConfig = hmilyConfig.getHmilyMongoConfig();
+    public void init(final String appName) {
+        this.appName = appName;
+        HmilyMongoConfig hmilyMongoConfig = ConfigEnv.getInstance().getConfig(HmilyMongoConfig.class);
         MongoClientFactoryBean clientFactoryBean = buildMongoClientFactoryBean(hmilyMongoConfig);
         try {
             clientFactoryBean.afterPropertiesSet();
-            service = new MongodbTemplateService(Objects.requireNonNull(clientFactoryBean.getObject()),
-                    hmilyMongoConfig.getMongoDbName());
+            service = new MongodbTemplateService(Objects.requireNonNull(clientFactoryBean.getObject()), hmilyMongoConfig.getDatabaseName());
+            
         } catch (Exception e) {
             LOGGER.error("mongo init error please check you config:{}", e.getMessage());
             throw new HmilyRepositoryException(e);
@@ -79,11 +78,11 @@ public class MongodbRepository implements HmilyRepository {
     
     private MongoClientFactoryBean buildMongoClientFactoryBean(final HmilyMongoConfig hmilyMongoConfig) {
         MongoClientFactoryBean clientFactoryBean = new MongoClientFactoryBean();
-        MongoCredential credential = MongoCredential.createScramSha1Credential(hmilyMongoConfig.getMongoUserName(),
-                hmilyMongoConfig.getMongoDbName(),
-                hmilyMongoConfig.getMongoUserPwd().toCharArray());
+        MongoCredential credential = MongoCredential.createScramSha1Credential(hmilyMongoConfig.getUserName(),
+                hmilyMongoConfig.getDatabaseName(),
+                hmilyMongoConfig.getPassword().toCharArray());
         clientFactoryBean.setCredentials(new MongoCredential[]{credential});
-        List<String> urls = Lists.newArrayList(Splitter.on(",").trimResults().split(hmilyMongoConfig.getMongoDbUrl()));
+        List<String> urls = Lists.newArrayList(Splitter.on(",").trimResults().split(hmilyMongoConfig.getUrl()));
         ServerAddress[] sds = new ServerAddress[urls.size()];
         for (int i = 0; i < sds.length; i++) {
             List<String> adds = Lists.newArrayList(Splitter.on(":").trimResults().split(urls.get(i)));
@@ -172,8 +171,7 @@ public class MongodbRepository implements HmilyRepository {
                 Criteria.where("update_time").lt(date)
                     .and("app_name").is(appName)
                     .and("trans_type").is(transType)
-                    .and("status").nin(4, 8), limit
-                )
+                    .and("status").nin(4, 8), limit)
                 .stream().filter(Objects::nonNull).map(converter::convert)
                 .collect(Collectors.toList());
     }

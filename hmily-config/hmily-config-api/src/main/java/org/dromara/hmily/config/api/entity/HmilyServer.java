@@ -31,8 +31,16 @@ import org.dromara.hmily.spi.HmilySPI;
 @HmilySPI("hmilyServer")
 public class HmilyServer extends AbstractConfig {
     
+    /**
+     * Resource suffix this parameter please fill in about is the transaction store path.
+     * If it's a table store this is a table suffix, it's stored the same way.
+     * If this parameter is not filled in, the applicationName of the application is retrieved by default
+     */
     private String appName;
     
+    /**
+     * local,nacos,zookeeper,apollo.
+     */
     private String configMode;
     
     @Override

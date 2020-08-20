@@ -17,10 +17,16 @@
 
 package org.dromara.hmily.core.bootstrap;
 
+import java.util.Objects;
 import org.dromara.hmily.common.exception.HmilyRuntimeException;
-import org.dromara.hmily.common.utils.LogUtil;
 import org.dromara.hmily.common.utils.StringUtils;
-import org.dromara.hmily.config.HmilyConfig;
+import org.dromara.hmily.config.api.ConfigEnv;
+import org.dromara.hmily.config.api.ConfigScan;
+import org.dromara.hmily.config.api.entity.HmilyConfig;
+import org.dromara.hmily.config.api.entity.HmilyMetricsConfig;
+import org.dromara.hmily.config.api.entity.HmilyServer;
+import org.dromara.hmily.config.loader.ConfigLoader;
+import org.dromara.hmily.config.loader.ServerConfigLoader;
 import org.dromara.hmily.core.disruptor.publisher.HmilyRepositoryEventPublisher;
 import org.dromara.hmily.core.holder.SingletonHolder;
 import org.dromara.hmily.core.hook.HmilyShutdownHook;
@@ -62,23 +68,16 @@ public final class HmilyBootstrap {
     /**
      * hmily initialization.
      *
-     * @param hmilyConfig {@linkplain HmilyConfig}
      */
-    public void start(final HmilyConfig hmilyConfig) {
+    public void start() {
         try {
+            loadConfig();
+            HmilyConfig hmilyConfig = ConfigEnv.getInstance().getConfig(HmilyConfig.class);
             check(hmilyConfig);
-            if (null == SingletonHolder.INST.get(ObjectProvide.class)) {
-                SingletonHolder.INST.register(ObjectProvide.class, new ReflectObject());
-            }
-            if (null != hmilyConfig.getHmilyMetricsConfig()) {
-                MetricsInit metricsInit = ExtensionLoaderFactory.load(MetricsInit.class);
-                metricsInit.init(hmilyConfig.getHmilyMetricsConfig());
-                HmilyShutdownHook.getInstance().registerAutoCloseable(metricsInit);
-            }
-            SingletonHolder.INST.register(HmilyConfig.class, hmilyConfig);
+            registerProvide();
             loadHmilyRepository(hmilyConfig);
-            HmilyShutdownHook.getInstance().registerAutoCloseable(new HmilyTransactionSelfRecoveryScheduled());
-            HmilyShutdownHook.getInstance().registerAutoCloseable(HmilyRepositoryEventPublisher.getInstance());
+            registerAutoCloseable(new HmilyTransactionSelfRecoveryScheduled(), HmilyRepositoryEventPublisher.getInstance());
+            initMetrics();
         } catch (Exception e) {
             LOGGER.error(" hmily init exception:", e);
             System.exit(0);
@@ -86,18 +85,62 @@ public final class HmilyBootstrap {
         new HmilyLogo().logo();
     }
     
+    private void registerProvide() {
+        if (null == SingletonHolder.INST.get(ObjectProvide.class)) {
+            SingletonHolder.INST.register(ObjectProvide.class, new ReflectObject());
+        }
+    }
+    
+    private void loadConfig() {
+        ConfigScan.scan();
+        ServerConfigLoader loader = new ServerConfigLoader();
+        loader.load(ConfigLoader.Context::new, (context, config) -> {
+            if (config != null) {
+                if (StringUtils.isNoneBlank(config.getConfigMode())) {
+                    String configMode = config.getConfigMode();
+                    ConfigLoader<?> configLoader = ExtensionLoaderFactory.load(ConfigLoader.class, configMode);
+                    LOGGER.info("Load the configuration【{}】information...", configMode);
+                    configLoader.load(context, (contextAfter, configAfter) -> LOGGER.info("Configuration information: {}", configAfter));
+                }
+            }
+        });
+    }
+    
+    private void initMetrics() {
+        HmilyMetricsConfig metricsConfig = ConfigEnv.getInstance().getConfig(HmilyMetricsConfig.class);
+        if (Objects.nonNull(metricsConfig)) {
+            MetricsInit metricsInit = ExtensionLoaderFactory.load(MetricsInit.class);
+            metricsInit.init(metricsConfig);
+            registerAutoCloseable(metricsInit);
+        }
+    }
+    
+    private void registerAutoCloseable(final AutoCloseable... autoCloseable) {
+        for (AutoCloseable closeable : autoCloseable) {
+            HmilyShutdownHook.getInstance().registerAutoCloseable(closeable);
+        }
+    }
+    
     private void check(final HmilyConfig hmilyConfig) {
         if (StringUtils.isBlank(hmilyConfig.getAppName())) {
             throw new HmilyRuntimeException("app name must be config");
         }
     }
-   
+    
     private void loadHmilyRepository(final HmilyConfig hmilyConfig) {
         HmilySerializer hmilySerializer = ExtensionLoaderFactory.load(HmilySerializer.class, hmilyConfig.getSerializer());
         HmilyRepository hmilyRepository = ExtensionLoaderFactory.load(HmilyRepository.class, hmilyConfig.getRepository());
         hmilyRepository.setSerializer(hmilySerializer);
-        hmilyRepository.init(hmilyConfig);
+        hmilyRepository.init(buildAppName(hmilyConfig));
         HmilyRepositoryFacade.getInstance().setHmilyRepository(hmilyRepository);
         HmilyRepositoryFacade.getInstance().setPhyDeleted(hmilyConfig.isPhyDeleted());
+    }
+    
+    private String buildAppName(final HmilyConfig hmilyConfig) {
+        HmilyServer server = ConfigEnv.getInstance().getConfig(HmilyServer.class);
+        if (StringUtils.isNoneBlank(hmilyConfig.getAppName())) {
+            return hmilyConfig.getAppName();
+        }
+        return server.getAppName();
     }
 }

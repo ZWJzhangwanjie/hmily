@@ -27,7 +27,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>hmily-tac-sqlparser</artifactId>
-
+    <packaging>pom</packaging>
+    <modules>
+        <module>hmily-tac-sqlparser-model</module>
+        <module>hmily-tac-sqlparser-spi</module>
+        <module>hmily-tac-sqlparser-shardingsphere</module>
+        <module>hmily-tac-sqlparser-calcite</module>
+    </modules>
+    
     <dependencies>
         <dependency>
            <groupId>com.google.guava</groupId>
